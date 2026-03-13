@@ -7,6 +7,7 @@ import json
 
 PORT=8000
 BASEURL = "https://api.opendota.com/api"
+ALLOWED_ORIGINS='http://localhost:5173'
 def get_search(handler):
     query_components = parse_qs(urlparse(handler.path).query)
     search_term = query_components.get("q", [""])[0]
@@ -17,11 +18,16 @@ def get_search(handler):
             "error": "Missing Parameter"
         }
 
-    externalurl = f"{BASEURL}/search?q={search_term}"
+    externalurl = f"{BASEURL}/search"
 
     try:
-        response = requests.get(externalurl)
+        response = requests.get(externalurl, 
+            params={
+            'q': search_term,
+            'limit': 10
+        })
         response.raise_for_status()
+
         return response.json()
     except Exception as err:
         return {
@@ -42,12 +48,14 @@ def get_match_history(handler):
     try:
         response = requests.get(externalurl, params={'limit': 10})
         response.raise_for_status()
+
         if response.json() == []:
             return {
                 "error": "Account is private"
             }
 
         return response.json()
+
     except Exception as err:
         return{
             "error": "External API Failed",
@@ -62,6 +70,7 @@ def get_matches(handler):
     try:
         response = requests.get(externalurl)
         response.raise_for_status()
+
         return response.json()
     except Exception as err:
         return {
@@ -77,15 +86,26 @@ routes={
 }
 
 class DotaAPIHandler(http.server.BaseHTTPRequestHandler):
+    def do_OPTIONS(self):
+        # Mandatory for CORS preflight requests from the browser
+        self.send_response(204)
+        self.send_header('Access-Control-Allow-Origin', 'http://localhost:5173')
+        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+
     def do_GET(self):
         parsedpath = urlparse(self.path).path
         action = routes.get(parsedpath)
         
         if action:
             self.send_response(200)
+            self.send_header('Access-Control-Allow-Origin', 'http://localhost:5173')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
             self.send_header("Content-type", "application/json")
+
             self.end_headers()
-            
+
             response = action(self)
             self.wfile.write(json.dumps(response).encode("utf-8"))
 
@@ -93,5 +113,5 @@ class DotaAPIHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(404, "Endpoint not found")
 
 with socketserver.TCPServer(("", PORT), DotaAPIHandler) as httpd:
-    print(f'serving at port {PORT}')
+    print(f'serving at port http://localhost:{PORT}')
     httpd.serve_forever()
